@@ -7,11 +7,8 @@ from flask import Flask, send_file
 import docker
 
 app = Flask(__name__)
-app.logger.setLevel(logging.INFO)
 
-log = logging.getLogger(__name__)
-
-REPO = "https://github.com/srccast/django_management_command_decorator.git"
+REPO = "https://github.com/pallets/flask.git"
 
 
 @app.route("/")
@@ -19,8 +16,6 @@ def hello_world():
     client = docker.DockerClient.from_env()
 
     with TemporaryDirectory(dir="/data") as temp_dir:
-        app.logger.info(f"Cloning {REPO} into {temp_dir}")
-
         client.containers.run(
             "alpine/git",
             f"clone {REPO} {temp_dir}",
