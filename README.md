@@ -13,7 +13,8 @@ We'll then return the repo as a tar file via download in the browser.
 
 ## Part 1: Docker rocker
 Docker is a great tool, and it's well known the "c" in Docker stands for cool, so we don't really have another choice.
-Let's create a minimal Dockerfile and docker-compose.yaml that uses docker-dind, so we can launch another container from our container.
+Let's create a minimal Dockerfile and docker-compose.yaml that uses docker-dind, 
+so we can launch another container from our container.
 
 ```dockerfile
 FROM python:3.12
@@ -35,7 +36,7 @@ services:
 ```
 
 This launches our minimal Dockerfile as a container named web, and the `docker-dind` image as a container named docker.
-Lets's launch this and see what happens. Once I run `docker compose up` it produces lots of output, which I didn't read,
+Let's launch this and see what happens. Once I run `docker compose up` it produces lots of output, which I didn't read,
 but nothing crashes, so I assume everything is fine.
 
 Next we'll try to connect to the docker container from our web container using the docker-py library. To do so we'll
@@ -58,9 +59,10 @@ RUN pip install -r requirements.txt
 
 You might ask, shouldn't we create a user with the proper permissions to not run as root? 
 Nonsense I say! Security is costly and money is tight right now. Also I can never remember if it's `adduser` or 
-`useradd` and I'm too lazy to look it up.
+`useradd` and I'm too lazy to look it up right now.
 
-Moving on, let's create a minimal python script to connect to our docker container. 
+Moving on, let's create a minimal python script to connect to our docker container. Create a new file `app.py`
+with the following content:
 
 ```python
 import docker
@@ -68,7 +70,7 @@ client = docker.DockerClient.from_env()
 client.info()
 ```
 
-And our Dockerfile
+And update the `Dockerfile`:
 
 ```dockerfile
 FROM python:3.12
@@ -78,7 +80,7 @@ RUN pip install -r /app/requirements.txt
 COPY app.py /app
 ```
 
-And our docker-compose.yaml
+And our `docker-compose.yaml`:
 
 ```yaml
 services:
@@ -95,7 +97,9 @@ services:
 
 ```
 
-This time we do get an error :-/
+Let's run `docker compose up --build` again. 
+
+Aaaaaand this time we do get an error :-/
 
 ```
 web-1  | Traceback (most recent call last):
@@ -118,8 +122,9 @@ web-1  | docker.errors.DockerException: Error while fetching server API version:
 ```
 
 Something about a missing file while creating the docker client. Turns out docker by default tries to connect to the docker daemon via a socket file
-that is usually located at `/var/run/docker.sock`. We don't want to connect via socker though, but via network using TCP. Let's add an env var to our web container
-to tell it to connect to our docker container.
+that is usually located at `/var/run/docker.sock`. We don't want to connect via socket though, but via network using TCP. 
+Let's add an env var to our web container to tell it to connect to our docker container that way.
+
 
 ```yaml
 services:
@@ -137,7 +142,8 @@ services:
     privileged: true
 ```
 
-Here we tell our web container to contact the docker container at port 2375 for all things docker. Let's launch our container and see what happens. 
+Here we tell our web container to contact the docker container at port 2375 for all things docker. 
+Let's launch our container and see what happens. 
 
 ```bash
 web-1  | Traceback (most recent call last):
@@ -160,7 +166,7 @@ web-1  | docker.errors.DockerException: Error while fetching server API version:
 
 Fail again, fail differently. The good news is that setting that env var seem to have changed things, the bad news is that 
 it still doesn't work. Even worse - we'll have to read some log output to figure things out. As I wrote earlier
-we try to connect to port 2375, let's see what our docker container says about that:
+we try to connect to port 2375, let's see what our docker container has to say about that:
 
 ```bash
 [tons of output omitted]
@@ -223,7 +229,7 @@ We could obviously overengineer a solution to try and poll until the server is r
 but this "Over engineering git clone" and not "Over engineering git clone and waiting for a service to be ready" so 
 we'll just hit em with the ol' reliable `time.sleep`.
 
-Let's add a 3 second wait before the client attempts to connect to the daemon:
+Let's add a 3-second wait before the client attempts to connect to the daemon:
 
 ```python
 import docker
@@ -513,7 +519,7 @@ def hello_world():
 ```
 
 So now we launch the `alpine/git` container with `remove=True` which makes sure that the container is deleted after running
-and with the volume setting, so whatever gets cloned while running should be available in our web container afterwards.
+and with the volume setting, so whatever gets cloned while running should be available in our web container afterward.
 
 Let's check it out, open `http://localhost:5000` once more, which should take a moment, and you should see `Cloned successfully`.
 
@@ -576,4 +582,4 @@ we clone the repo, and then tar the whole folder into an archive which we then r
 
 I'll leave it as an exercise to the reader to add a form that makes the repo input dynamic. 
 
-Thank you for reading this far, until the next time. 
+The whole code can be found here. Thank you for reading this far, until the next time. 
