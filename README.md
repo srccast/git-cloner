@@ -1,272 +1,260 @@
-# Let's overengineer git clone
+# Let's dive into docker-in-docker
 
-Git and `git clone` are fast, easy-to-use and reliable tools that every developer uses daily. 
-
-Well, you might ask, how can I make it microservice based, unnecessary complex and totally insecure?
-
-Great question! Let's get going. 
-
-## How is it going to work?
-We'll use Docker to launch a web service, which will then
-launch another container via docker-dind whenever a request comes in to clone the repository into a shared volume. 
-We'll then return the repo as a tar file via download in the browser. 
-
-## Part 1: Docker rocker
-Docker is a great tool, and it's well known the "c" in Docker stands for cool, so we don't really have another choice.
-Let's create a minimal Dockerfile and docker-compose.yaml that uses docker-dind, 
-so we can launch another container from our container.
-
-```dockerfile
-FROM python:3.12
-```
-
-Just 1 line, beautiful. 
-
-```yaml
-services:
-  web:
-    build:
-      context: .
-    depends_on:
-      - docker
-
-  docker:
-    image: docker:dind
-    privileged: true
-```
-
-This launches our minimal Dockerfile as a container named web, and the `docker-dind` image as a container named docker.
-Let's launch this and see what happens. Once I run `docker compose up` it produces lots of output, which I didn't read,
-but nothing crashes, so I assume everything is fine.
-
-Next we'll try to connect to the docker container from our web container using the docker-py library. To do so we'll
-add a `requirements.txt` which contains just that.
-
-```requirements
-docker
-```
-
-Once again, 1 line, KISSing hard today. 
-
-Let's update our Dockerfile to install the requirements.
-
-```dockerfile
-FROM python:3.12
-WORKDIR /app
-COPY requirements.txt /app
-RUN pip install -r requirements.txt
-```
-
-You might ask, shouldn't we create a user with the proper permissions to not run as root? 
-Nonsense I say! Security is costly and money is tight right now. Also I can never remember if it's `adduser` or 
-`useradd` and I'm too lazy to look it up right now.
-
-Moving on, let's create a minimal python script to connect to our docker container. Create a new file `app.py`
-with the following content:
-
-```python
-import docker
-client = docker.DockerClient.from_env()
-client.info()
-```
-
-And update the `Dockerfile`:
-
-```dockerfile
-FROM python:3.12
-WORKDIR /app
-COPY requirements.txt /app
-RUN pip install -r /app/requirements.txt
-COPY app.py /app
-```
-
-And our `docker-compose.yaml`:
-
-```yaml
-services:
-  web:
-    build:
-      context: .
-    depends_on:
-      - docker
-    command: python app.py
-
-  docker:
-    image: docker:dind
-    privileged: true
-
-```
-
-Let's run `docker compose up --build` again. 
-
-Aaaaaand this time we do get an error :-/
-
-```
-web-1  | Traceback (most recent call last):
-web-1  |   File "/app/app.py", line 2, in <module>
-web-1  |     client = docker.DockerClient.from_env()
-web-1  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-web-1  |   File "/usr/local/lib/python3.12/site-packages/docker/client.py", line 94, in from_env
-web-1  |     return cls(
-web-1  |            ^^^^
-web-1  |   File "/usr/local/lib/python3.12/site-packages/docker/client.py", line 45, in __init__
-web-1  |     self.api = APIClient(*args, **kwargs)
-web-1  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^
-web-1  |   File "/usr/local/lib/python3.12/site-packages/docker/api/client.py", line 207, in __init__
-web-1  |     self._version = self._retrieve_server_version()
-web-1  |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-web-1  |   File "/usr/local/lib/python3.12/site-packages/docker/api/client.py", line 230, in _retrieve_server_version
-web-1  |     raise DockerException(
-web-1  | docker.errors.DockerException: Error while fetching server API version: ('Connection aborted.', FileNotFoundError(2, 'No such file or directory'))
-
-```
-
-Something about a missing file while creating the docker client. Turns out docker by default tries to connect to the docker daemon via a socket file
-that is usually located at `/var/run/docker.sock`. We don't want to connect via socket though, but via network using TCP. 
-Let's add an env var to our web container to tell it to connect to our docker container that way.
+> The following article contains things I have recently learned about dind. It's by no means complete but
+> it should contain a couple of pointers for people that want to start using dind.
 
 
-```yaml
-services:
-  web:
-    build:
-      context: .
-    depends_on:
-      - docker
-    command: python app.py
-    environment:
-      - DOCKER_HOST=tcp://docker:2375
+# Part 1: The basics
 
-  docker:
-    image: docker:dind
-    privileged: true
-```
+Let's say you have a Docker container and inside that container you want to do Docker stuff, like build images
+or launch a docker compose stack, what are your options? 
 
-Here we tell our web container to contact the docker container at port 2375 for all things docker. 
-Let's launch our container and see what happens. 
+The easiest way is to volume mount the host's Docker socket into the container like this:
 
 ```bash
-web-1  | Traceback (most recent call last):
-web-1  |   File "/app/app.py", line 2, in <module>
-web-1  |     client = docker.DockerClient.from_env()
-web-1  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-web-1  |   File "/usr/local/lib/python3.12/site-packages/docker/client.py", line 94, in from_env
-web-1  |     return cls(
-web-1  |            ^^^^
-web-1  |   File "/usr/local/lib/python3.12/site-packages/docker/client.py", line 45, in __init__
-web-1  |     self.api = APIClient(*args, **kwargs)
-web-1  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^
-web-1  |   File "/usr/local/lib/python3.12/site-packages/docker/api/client.py", line 207, in __init__
-web-1  |     self._version = self._retrieve_server_version()
-web-1  |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-web-1  |   File "/usr/local/lib/python3.12/site-packages/docker/api/client.py", line 230, in _retrieve_server_version
-web-1  |     raise DockerException(
-web-1  | docker.errors.DockerException: Error while fetching server API version: HTTPConnectionPool(host='docker', port=2375): Max retries exceeded with url: /version (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7785357ea840>: Failed to establish a new connection: [Errno 111] Connection refused'))
+% docker run -v /run/docker.sock:/run/docker.sock -it docker sh  # run from the host system
 ```
 
-Fail again, fail differently. The good news is that setting that env var seem to have changed things, the bad news is that 
-it still doesn't work. Even worse - we'll have to read some log output to figure things out. As I wrote earlier
-we try to connect to port 2375, let's see what our docker container has to say about that:
+Now let's launch another container from inside the container:
 
 ```bash
-[tons of output omitted]
-docker-1  | time="2024-05-26T11:26:56.427080454Z" level=info msg="API listen on [::]:2376"
+/ $ docker run -it ubuntu bash  # run from inside the container
+root@ec84497b833b:/# # now this shell is a container inside the container
 ```
 
-Huh, so we try to connect to port 2375 but Docker listens on 2376. Let's change our settings and try again:
-
-```yaml
-services:
-  web:
-    build:
-      context: .
-    depends_on:
-      - docker
-    command: python app.py
-    environment:
-      - DOCKER_HOST=tcp://docker:2376  # changed 2375 to 2376
-
-  docker:
-    image: docker:dind
-    privileged: true
-```
-
-This time we get the same error:
+Okay, so we have a container running the Docker image, and from inside that container launched another container
+running the Ubuntu image. Now let's check what that looks like on the host system.
 
 ```bash
-web-1     | Traceback (most recent call last):
-web-1     |   File "/app/app.py", line 2, in <module>
-web-1     |     client = docker.DockerClient.from_env()
-web-1     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-web-1     |   File "/usr/local/lib/python3.12/site-packages/docker/client.py", line 94, in from_env
-web-1     |     return cls(
-web-1     |            ^^^^
-web-1     |   File "/usr/local/lib/python3.12/site-packages/docker/client.py", line 45, in __init__
-web-1     |     self.api = APIClient(*args, **kwargs)
-web-1     |                ^^^^^^^^^^^^^^^^^^^^^^^^^^
-web-1     |   File "/usr/local/lib/python3.12/site-packages/docker/api/client.py", line 207, in __init__
-web-1     |     self._version = self._retrieve_server_version()
-web-1     |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-web-1     |   File "/usr/local/lib/python3.12/site-packages/docker/api/client.py", line 230, in _retrieve_server_version
-web-1     |     raise DockerException(
-web-1     | docker.errors.DockerException: Error while fetching server API version: HTTPConnectionPool(host='docker', port=2375): Max retries exceeded with url: /version (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x71bfcb29e4e0>: Failed to establish a new connection: [Errno 111] Connection refused'))
-web-1 exited with code 1
-docker-1  | time="2024-05-26T11:29:13.608513462Z" level=info msg="[graphdriver] using prior storage driver: overlay2"
-docker-1  | time="2024-05-26T11:29:13.609697417Z" level=info msg="Loading containers: start."
-docker-1  | time="2024-05-26T11:29:14.093074384Z" level=info msg="Default bridge (docker0) is assigned with an IP address 172.17.0.0/16. Daemon option --bip can be used to set a preferred IP address"
-docker-1  | time="2024-05-26T11:29:14.152889851Z" level=info msg="Loading containers: done."
-docker-1  | time="2024-05-26T11:29:14.163966006Z" level=info msg="Docker daemon" commit=ef1912d containerd-snapshotter=false storage-driver=overlay2 version=26.1.2
-docker-1  | time="2024-05-26T11:29:14.164129406Z" level=info msg="Daemon has completed initialization"
-docker-1  | time="2024-05-26T11:29:14.206453110Z" level=info msg="API listen on /var/run/docker.sock"
-docker-1  | time="2024-05-26T11:29:14.206482325Z" level=info msg="API listen on [::]:2376"
+% docker ps
+CONTAINER ID   IMAGE     COMMAND                  CREATED         STATUS         PORTS           NAMES
+ec84497b833b   ubuntu    "bash"                   3 minutes ago   Up 3 minutes                   infallible_leavitt
+71c5c74aafe3   docker    "dockerd-entrypoint.…"   6 minutes ago   Up 6 minutes   2375-2376/tcp   interesting_napier
+```
+
+Interesting, so even though the container was launched from inside another container, they both exist side-by-side
+on the host system. At first, I was surprised by this, but it makes sense as we have mounted the `docker.sock` file
+of the host system into the Docker container, which obviously is the interface to the Docker service of the host machine.
+
+So our system currently looks like this:
+
+```text
++---------------------------------------------------+
+|                 HOST SYSTEM                       |
+|   +-------------------+   +--------------------+  |
+|   |                   |   |                    |  |
+|   |   CONTAINER A     |   |   CONTAINER B      |  |
+|   |   RUNS DOCKER     |   |   RUNS UBUNTU      |  |
+|   |                   |   |                    |  |
+|   +-------------------+   +--------------------+  |
+|                                                   |
++---------------------------------------------------+
+```
+
+Okay so what happens if we kill Container A? Will container B shut down as well? Let's see
+
+```bash
+% docker ps
+CONTAINER ID   IMAGE     COMMAND                  CREATED         STATUS         PORTS           NAMES
+ec84497b833b   ubuntu    "bash"                   3 minutes ago   Up 3 minutes                   infallible_leavitt
+71c5c74aafe3   docker    "dockerd-entrypoint.…"   6 minutes ago   Up 6 minutes   2375-2376/tcp   interesting_napier
+
+% docker stop 71c5c74aafe3
+71c5c74aafe3
+
+% docker ps
+CONTAINER ID   IMAGE     COMMAND   CREATED          STATUS          PORTS     NAMES
+ec84497b833b   ubuntu    "bash"    3 minutes ago   Up 3 minutes             infallible_leavitt
 
 ```
 
-It turns out that since our 2 containers launch at the same time, the web container tries to connect to the docker container before
-the docker daemon is ready to accept connections.
+Kind of expected, the Docker container was shut down, but the Ubuntu container is still around, as even though
+it was launched from the Docker container it still runs on the host system after all and is not tied to the Docker 
+container at all.
 
-We could obviously overengineer a solution to try and poll until the server is ready or do some other fancy tricks,
-but this "Over engineering git clone" and not "Over engineering git clone and waiting for a service to be ready" so 
-we'll just hit em with the ol' reliable `time.sleep`.
+Running containers from inside containers this way works well, until you either don't have access to the socket or want
+Docker daemons that run entirely separate from the host machine's Docker daemon.
 
-Let's add a 3-second wait before the client attempts to connect to the daemon:
+## dind
+
+Dind stands for docker-in-docker, and allows to launch a completely separate Docker daemon inside a container. 
+The only drawback is that the dind container has to be launched either 
+* as a _privileged_ container, meaning that the container has full access to the host system
+* or using a different runtime like [sysbox](https://github.com/nestybox/sysbox), which provides stronger isolation
+than the default runtime and allows Docker containers to launch a Docker daemon without full system access
+
+For this article we'll use the former approach, running privileged containers.
+
+Let's run such a container and see what happens:
+
+```bash
+% docker network create dind-test
+% docker run --rm --network dind-test --privileged --name docker docker:dind dockerd --host tcp://0.0.0.0:2375
+time="2024-05-29T12:59:58.949314517Z" level=info msg="Starting up"
+time="2024-05-29T12:59:58.950601080Z" level=warning msg="Binding to IP address without --tlsverify is insecure and gives root access on this machine to everyone who has access to your network." host="tcp://0.0.0.0:2375"
+time="2024-05-29T12:59:58.950617972Z" level=warning msg="Binding to an IP address, even on localhost, can also give access to scripts run in a browser. Be safe out there!" host="tcp://0.0.0.0:2375"
+time="2024-05-29T12:59:58.950631948Z" level=warning msg="[DEPRECATION NOTICE] In future versions this will be a hard failure preventing the daemon from starting! Learn more at: https://docs.docker.com/go/api-security/" host="tcp://0.0.0.0:2375"
+[....]
+time="2024-05-29T13:00:01.190787714Z" level=warning msg="[DEPRECATION NOTICE]: API is accessible on http://0.0.0.0:2375 without encryption.\n         Access to the remote API is equivalent to root access on the host. Refer\n         to the 'Docker daemon attack surface' section in the documentation for\n         more information: https://docs.docker.com/go/attack-surface/\nIn future versions this will be a hard failure preventing the daemon from starting! Learn more at: https://docs.docker.com/go/api-security/"
+time="2024-05-29T13:00:01.190814715Z" level=info msg="Docker daemon" commit=ef1912d containerd-snapshotter=false storage-driver=overlay2 version=26.1.2
+time="2024-05-29T13:00:01.191038646Z" level=info msg="Daemon has completed initialization"
+time="2024-05-29T13:00:01.234500788Z" level=info msg="API listen on [::]:2375"
+```
+
+A couple of things to unpack here, first let's break down the launch command:
+
+* `docker run --rm` We launch the docker container, but remove it after it terminates
+* `--network dind-test` We HAVE to create a new network for this, and use it as the [default bridge network doesn't support service discovery through a built-in DNS](https://stackoverflow.com/a/41403239)
+* `--privileged` The container receives access to the whole system
+* `--name docker` The container will be accessible in the network under the name "docker"
+* `docker:dind` We run the official Docker image with the dind tag
+* `dockerd --host tcp://0.0.0.0:2375` We launch the Docker daemon listening on all interfaces via TCP
+
+Second, as we can see from the numerous warning messages, this approach is super unsecure as now pretty much anyone
+can connect to our new daemon. 
+
+> But wait, if it's so unsecure, why are you doing this?
+> > Since the Docket network is not exposed and I wanted to keep things simple I chose the insecure approach.
+> > If you want to use dind on a production system, you MUST use TLS.
+
+Now let's launch another docker container and the run Ubuntu again.
+
+```bash
+% docker run --rm --network dind-test -it docker sh
+/ $ docker run ubuntu bash
+Unable to find image 'ubuntu:latest' locally
+latest: Pulling from library/ubuntu
+49b384cc7b4a: Pull complete 
+Digest: sha256:3f85b7caad41a95462cf5b787d8a04604c8262cdcdf9a472b8c52ef83375fe15
+Status: Downloaded newer image for ubuntu:latest
+/ $ 
+```
+
+Okay, first we launch the Docker container, again in our `dind-test` network, and then we launch a Ubuntu container 
+from inside that container.
+
+> Wait, why does the image need to pulled again?
+> > The host Docker daemon and the newly launched Docker daemon do not share their build and image cache, so the
+> > image needs to downloaded again.
+> 
+> Okay, but how does a container know which Docker daemon to connect to?
+> > Check [this great stackoverflow answer](https://stackoverflow.com/a/73573049) for a detailed answer.
+> > tldr: 
+> > * if the DOCKER_HOST env var exists, use whatever is specified there 
+> > * use unix:///run/docker.sock if it exists
+> > * use tcp://docker:2375 if no TLS configuration exists
+> > * use tcp://docker:2376 if a TLS configuration exists
+
+Let's see what at this looks like from our host system:
+
+```bash
+% docker ps 
+CONTAINER ID   IMAGE         COMMAND                  CREATED          STATUS          PORTS           NAMES
+6b5bedaedfeb   docker        "dockerd-entrypoint.…"   2 minutes ago    Up 2 minutes    2375-2376/tcp   elastic_bouman
+0abe319c4796   docker:dind   "dockerd-entrypoint.…"   10 minutes ago   Up 10 minutes   2375-2376/tcp   docker
+```
+
+Interesting, the Ubuntu container doesn't show up at all. Let's launch another container Docker container to check
+the running docker containers on the `docker:dind` container:
+
+```bash
+% docker run --network dind-test -it docker sh
+/ $ docker ps
+CONTAINER ID   IMAGE     COMMAND   CREATED              STATUS              PORTS     NAMES
+9f4013ccfe75   ubuntu    "bash"    About a minute ago   Up About a minute             laughing_zhukovsky
+```
+
+Just as expected, the Ubuntu container runs entirely separate from the host Docker daemon inside a new Docker daemon
+on the `docker:dind` container. Let's visualise this:
+
+```text
++-------------------------------------------------------------------------+
+|                       HOST SYSTEM                                       |
+| +---------------------+          +------------------------------------+ |
+| |   CONTAINER A       |          |   CONTAINER B                      | |
+| |   RUNS DOCKER       |          |   RUNS DOCKER:DIND                 | |
+| |                     |          |                                    | |
+| |                   COMMUNICATES WITH        +------------------+     | |
+| |                   --+----------+>          | CONTAINER C      |     | |
+| |                     |          |           | RUNS UBUNTU      |     | |
+| |                   LAUNCHES     |           |                  |     | |
+| |                   --+----------+-----------+------>           |     | |
+| |                     |          |           |                  |     | |
+| |                     |          |           +------------------+     | |
+| +---------------------+          +------------------------------------+ |
++-------------------------------------------------------------------------+
+```
+
+So here Container A tells Container B (the `docker:dind` container) to launch a Ubuntu container, which runs
+(isolated from the host's Docker daemon) in the daemon launched by the `docker:dind` container.
+
+## Volumes
+
+Something that was odd to me was how volumes are handled, but see for yourself:
+
+```bash
+# assuming the docker:dind container still runs
+% docker run --network dind-test -it docker sh
+/ $ docker run -it -v /tmp:/tmp ubuntu bash
+root@e76cea8eead4:/# echo "Hello from Ubuntu" > /tmp/greeting
+root@e76cea8eead4:/# 
+exit
+/ $ ls /tmp/
+/ $ 
+```
+
+Huh, weird. So we launched another Ubuntu container, but this time we mounted `/tmp` into the container, we then 
+created a file in `/tmp` but the file doesn't show up in the launching container. Where is it?
+
+Since the launching container only forwards the command to the actual `docker:dind` container, the volume is shared
+between the `docker:dind` container and the Ubuntu container, as we can see here
+
+```bash
+% docker exec -it docker sh
+/ $ ls /tmp/
+greeting
+/ $ cat /tmp/greeting 
+Hello from Ubuntu
+```
+
+That also means that if we want to share a volume between the launching container and the Ubuntu container, we first
+have to share a volume between the launching container and the `docker:dind` container, and then when launching the 
+Ubuntu container, share volume mount that folder again on the Ubuntu container. 
+
+I was confused about that at first, so I decided to build a small application that uses all those concept together.
+Which brings us to part 2:
+
+# Part 2: let's overengineer git clone
+
+We'll build a small Flask service, which will launch a git container whenever a request comes in 
+to clone a repository into a shared volume. We'll afterward return the repo as a tar file via download to the user. 
+
+## Let's get coding
+
+From here on we'll use docker compose, since it makes orchestration easier and helps with the small things, like
+creating a new network and handle volumes.
+
+Let's create a minimal script which connects to the Docker container and prints some information:
 
 ```python
 import docker
 import time
+time.sleep(20)  # give the docker:dind container time to launch
 
-time.sleep(3)
 client = docker.DockerClient.from_env()
 print(client.info())
 ```
 
-Alright, third time's a charm:
+Then the Dockerfile:
 
-```bash
-web-1     | Traceback (most recent call last):
-web-1     |   File "/app/app.py", line 5, in <module>
-web-1     |     client = docker.DockerClient.from_env()
-web-1     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-web-1     |   File "/usr/local/lib/python3.12/site-packages/docker/client.py", line 94, in from_env
-web-1     |     return cls(
-web-1     |            ^^^^
-web-1     |   File "/usr/local/lib/python3.12/site-packages/docker/client.py", line 45, in __init__
-web-1     |     self.api = APIClient(*args, **kwargs)
-web-1     |                ^^^^^^^^^^^^^^^^^^^^^^^^^^
-web-1     |   File "/usr/local/lib/python3.12/site-packages/docker/api/client.py", line 207, in __init__
-web-1     |     self._version = self._retrieve_server_version()
-web-1     |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-web-1     |   File "/usr/local/lib/python3.12/site-packages/docker/api/client.py", line 230, in _retrieve_server_version
-web-1     |     raise DockerException(
-web-1     | docker.errors.DockerException: Error while fetching server API version: 400 Client Error for http://docker:2376/version: Bad Request ("Client sent an HTTP request to an HTTPS server.")
+```dockerfile
+FROM python:3.12
+RUN pip install docker
+WORKDIR /app
+COPY app.py /app/app.py
 ```
 
-... well maybe not. While sleeping did fix the problem that the docker daemon wasn't ready yet a whole different problem
-popped up. Docker expects us to connect via HTTPS, while we want to connect via TCP. Stupid security-minded developers.
-Here we have 2 options: either configure things properly, mount certs where they belong and use HTTPS like a real
-programmer or just tell the Docker daemon to accept connections via TCP. Obviously we'll use the latter.
-
-We'll do so by overriding the entrypoint of the docker container like this:
+And our docker-compose.yaml
 
 ```yaml
 services:
@@ -275,87 +263,41 @@ services:
       context: .
     depends_on:
       - docker
-    command: python app.py
+    command: python /app/app.py
     environment:
-      - DOCKER_HOST=tcp://docker:2376
+      DOCKER_HOST: tcp://docker:2375
 
   docker:
     image: docker:dind
     privileged: true
-    entrypoint: dockerd --host=tcp://0.0.0.0:2376 --tls=false
+    entrypoint: dockerd --host tcp://0.0.0.0:2375
+
 ```
 
-We basically tell the Docker daemon to listen for connections on all interfaces on port 2376 using TCP and to not
-use TLS.
+This launches our minimal Dockerfile as a container named web, and the `docker:dind` image as a container named docker.
 
-Okay, this time it should work. Let's run `docker comppose up` again.
-
-Ignoring the tons of output that warn us how insecure this approach is and that we potentially expose our machine and
-that we should definitely not do this at all, we should see the following:
+Now let's run this and see what happens `docker compose up`
 
 ```text
-[insane amount of output skipped]
+[output skipped]
 web-1     | {'ID': '6b5b0018-26a5-4054-8dbd-03b91dde98c1', 'Containers': 0, 'ContainersRunning': 0, [...]}
 ```
 
-Nice! We finally managed to connect to the remote docker daemon. 
+Nice! We managed to connect to the remote docker daemon. 
 
-### Part 2: Putting the genie into the flask
+### Putting the genie into the flask
 
-Now we'll focus on updating our `app.py` to launch a container that clones the git repo into a volume,
-compresses that repo into a tar archive and then have the user download that repo via their browser.
-We'll use flask to handle the HTTP server side of things. 
+Let's implement that previously mentioned Flask service.
 
-We'll add flask to our requirements.txt, and restart our stack.
+First our updated `Dockerfile`, which now installs flask.
 
-```requirements
-docker
-flask
+```Docker
+FROM python:3.12
+RUN pip install docker flask
+WORKDIR /app
+COPY app.py /app/app.py
 ```
-
-#### Interlude: `docker compose` is watching (for) us
-Back in the day when computers were made from wood and powered by steam, we'd usually mount our code into the container 
-and then somehow restart the flask process if a file changed. No more! Starting with version 2.22 docker compose 
-has built-in capabilities to watch files and restart the affected containers if necessary. 
-We'll use this feature from here on to automatically reload our container. 
-
-Here is the updated `docker-compose.yaml`:
-
-```yaml
-services:
-  web:
-    build:
-      context: .
-    working_dir: /app
-    environment:
-      - DOCKER_HOST=tcp://docker:2376
-    depends_on:
-      - docker
-    develop:  # new line
-      watch:  # new line 
-        - action: rebuild  # new line
-          path: app.py  # new line
-
-  docker:
-    image: docker:dind
-    privileged: true
-    entrypoint: dockerd --host=tcp://0.0.0.0:2376 --tls=false
-```
-
-And from now on we'll use `docker compose up --watch` to have docker compose rebuild and replace the web container whenever
-`app.py` gets changed. 
-
-#### Hello World
-
-The last step of our adventure will be to implement the logic behind all this:
-
-* launch a new container
-* run git clone for the selected repository
-* copy the downloaded repository from the created container into the web container
-* tar the repository
-* return the tar file in the HTTP response
-
-Let's start by updating our `app.py` to include the basic flask logic
+And the new `app.py` to include the basic flask logic
 
 ```python
 from flask import Flask, send_file
@@ -374,31 +316,24 @@ services:
   web:
     build:
       context: .
-    command: flask run
-    ports:
-      - 5000:5000
-    working_dir: /app
-    environment:
-      - FLASK_RUN_HOST=0.0.0.0
-      - DOCKER_HOST=tcp://docker:2376
     depends_on:
       - docker
-    develop:
-      watch:
-        - action: rebuild
-          path: app.py
+    command: flask run
+    environment:
+      FLASK_RUN_HOST: 0.0.0.0
+      DOCKER_HOST: tcp://docker:2375
+    ports:
+      - 5000:5000
 
   docker:
     image: docker:dind
     privileged: true
-    entrypoint: dockerd --host=tcp://0.0.0.0:2376 --tls=false
+    entrypoint: dockerd --host tcp://0.0.0.0:2375
 ```
 
-Note: it might be necessary to restart docker compose once more, so it picks up the updated ports and command settings.
+Alright, now we should be able to visit `http://localhost:5000` and be greeted by "Hello world".
 
-Alright, now we should be able to visit `http://localhost:5000` and be greeted by a classic programming slogan.
-
-So far so good, but it could be a bit more dockier for my taste, so let's launch a container on every request,
+So far so good, let's launch a container on every request,
 which then echoes "Hello world", which will then be returned to our web container, which will then be returned
 as part of the HTTP response. 
 
@@ -415,15 +350,14 @@ def hello_world():
     return client.containers.run("ubuntu", "echo Hello world!")
 ```
 
-That's better! Now once you reload the page, you'll have to endure some enterprise load times (TM) until you'll be 
-served that trusty "Hello world", since first the Ubuntu container needs to be downloaded and launched, but that's
-obviously better than not overengineering. 
+Now if we send another request, it'll take longer than before, but after some time we'll see "Hello world!" again.
+Like said earlier, the extra time comes from downloading and launching the Ubuntu container. 
 
 #### Let's get cloning
 
 Okay, so we have a web container, and we are able to launch Docker containers from that web container. All that is left
 is find a way to launch git as a container, and we're good to go. Thankfully the good people of alpine linux have 
-provided such container, which we'll use from here on. 
+provided such container, which we'll use. 
 
 ```python
 from flask import Flask, send_file
@@ -444,51 +378,42 @@ def hello_world():
     )
 ```
 
-Reloading `http://localhost:5000` does ... something. Not that there would be any output to prove it, 
-but since that the request takes a moment something must have happened. 
-
-Under the hood, we launched the `alpine/git` container, which then cloned the flask repo, but given the transient
+Reloading `http://localhost:5000` does ... something. Under the hood, we launched the `alpine/git` container, 
+which then cloned the flask repo, but given the transient
 nature of the container, once `git clone` finished the container stopped, and we have no chance of accessing the
-downloaded data :-(.
+downloaded data.
 
-Once again we have 2 possible ways to proceed: somehow wait after git clone, and run `docker cp` to copy all the data
-from the container into the web container, or, rather simply download the data onto a volume that is shared between
-the containers, so we can access it even after the container shuts down. Since the first one is pretty tricky, and
-I'm lazy and this article is quite long already let's go with the second approach. Here is the updated `docker-compose.yaml`
+Let's add volumes to access the cloned repo.
 
 ```yaml
 services:
   web:
     build:
       context: .
-    command: flask run
-    ports:
-      - 5000:5000
-    working_dir: /app
-    environment:
-      - FLASK_RUN_HOST=0.0.0.0
-      - DOCKER_HOST=tcp://docker:2376
     depends_on:
       - docker
+    command: flask run
+    environment:
+      FLASK_RUN_HOST: 0.0.0.0
+      DOCKER_HOST: tcp://docker:2375
+    ports:
+      - 5000:5000
     volumes:
       - data:/data
-    develop:
-      watch:
-        - action: rebuild
-          path: app.py
 
   docker:
     image: docker:dind
     privileged: true
-    entrypoint: dockerd --host=tcp://0.0.0.0:2376 --tls=false
+    entrypoint: dockerd --host tcp://0.0.0.0:2375
     volumes:
       - data:/data
 
 volumes:
   data: {}
+
 ```
 
-Cool cool cool. We have created a volume named `data`, which is mounted in both the web and docker container, and which
+We now have a volume named `data`, which is mounted in both the web and docker container, and which
 we'll later also mount inside the `alpine/git` container.
 
 Our `app.py` should look like this:
@@ -508,8 +433,7 @@ def hello_world():
 
     client.containers.run(
         "alpine/git",
-        f"clone {REPO} /data",
-        remove=True,
+        f"clone {REPO}",
         volumes=[
             "/data:/data"
         ]
@@ -532,14 +456,14 @@ $ docker compose run web ls /data
 CHANGES.rst  CODE_OF_CONDUCT.md  CONTRIBUTING.rst  LICENSE.txt	README.md  docs  examples  pyproject.toml  requirements  requirements-skip  src  tests	tox.ini
 ```
 
-Well if it isn't the freshly cloned flask repo inside our web container!
+Great, it's the cloned repo on the data volume inside the web container.
 
 Nearly done, now all that is left is to wrap everything into a tar archive and return it in the HTTP response. We'll 
 also make sure everything gets downloaded into a separate temporary directory so if 2 users will ever send a request
 at the same time, those 2 requests will not overwrite each other. Here's the code
 
 
-````python
+```python
 import io
 import tarfile
 from tempfile import TemporaryDirectory
@@ -556,13 +480,12 @@ REPO = "https://github.com/pallets/flask.git"
 def hello_world():
     client = docker.DockerClient.from_env()
 
-    with TemporaryDirectory(dir="/data") as temp_dir:
+    with TemporaryDirectory(dir="/data", delete=False) as temp_dir:
         client.containers.run(
             "alpine/git",
-            f"clone {REPO} {temp_dir}",
-            remove=True,
+            f"clone {REPO} /data",
             volumes=[
-                "/data:/data"
+                f"{temp_dir}:/data"
             ]
         )
 
@@ -572,7 +495,7 @@ def hello_world():
 
         out_f.seek(0)
         return send_file(path_or_file=out_f, mimetype="application/x-tar")
-````
+```
 
 Here we first create a temporary directory, which will be removed after the request is done,
 we clone the repo, and then tar the whole folder into an archive which we then return. Sweet!
@@ -580,6 +503,6 @@ we clone the repo, and then tar the whole folder into an archive which we then r
 
 # Closing thoughts
 
-I'll leave it as an exercise to the reader to add a form that makes the repo input dynamic. 
-
-The whole code can be found here. Thank you for reading this far, until the next time. 
+I hope this article helped people that want to use dind but didn't know how to start properly. If you have
+any thoughts, comments or spot any errors please contact me at fabian.lange@srccast.de. Thanks for reading, 
+until the next time. 
