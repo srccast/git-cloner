@@ -2,26 +2,25 @@ services:
   web:
     build:
       context: .
-    command: flask run
-    ports:
-      - 5000:5000
-    working_dir: /app
-    environment:
-      - FLASK_RUN_HOST=0.0.0.0
-      - DOCKER_HOST=tcp://docker:2375
     depends_on:
       - docker
-    volumes:
-      - data:/data
+    command: flask run
+    environment:
+      FLASK_RUN_HOST: 0.0.0.0
+      DOCKER_HOST: tcp://docker:2375
+    ports:
+      - 5000:5000
     develop:
       watch:
         - action: rebuild
           path: app.py
+    volumes:
+      - data:/data
 
   docker:
     image: docker:dind
     privileged: true
-    entrypoint: dockerd --host=tcp://0.0.0.0:2375 --tls=false
+    entrypoint: dockerd --host tcp://0.0.0.0:2375
     volumes:
       - data:/data
 

@@ -1,6 +1,4 @@
 FROM python:3.12
-
+RUN pip install docker flask
 WORKDIR /app
-COPY requirements.txt /app
-RUN pip install -r /app/requirements.txt
-COPY app.py /app
+COPY app.py /app/app.py

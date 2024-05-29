@@ -1,5 +1,4 @@
 import io
-import logging
 import tarfile
 from tempfile import TemporaryDirectory
 
@@ -15,13 +14,12 @@ REPO = "https://github.com/pallets/flask.git"
 def hello_world():
     client = docker.DockerClient.from_env()
 
-    with TemporaryDirectory(dir="/data") as temp_dir:
+    with TemporaryDirectory(dir="/data", delete=False) as temp_dir:
         client.containers.run(
             "alpine/git",
-            f"clone {REPO} {temp_dir}",
-            remove=True,
+            f"clone {REPO} /data",
             volumes=[
-                "/data:/data"
+                f"{temp_dir}:/data"
             ]
         )
 
