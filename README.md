@@ -1,10 +1,7 @@
-# Let's dive into docker-in-docker
-
-> The following article contains things I have recently learned about dind. It's by no means complete but
-> it should contain a couple of pointers for people that want to start using dind.
+# Things I recently learned about docker-in-docker
 
 
-# Part 1: The basics
+## Part 1: The basics
 
 Let's say you have a Docker container and inside that container you want to do Docker stuff, like build images
 or launch a docker compose stack, what are your options? 
@@ -75,7 +72,7 @@ container at all.
 Running containers from inside containers this way works well, until you either don't have access to the socket or want
 Docker daemons that run entirely separate from the host machine's Docker daemon.
 
-## dind
+### dind
 
 Dind stands for docker-in-docker, and allows to launch a completely separate Docker daemon inside a container. 
 The only drawback is that the dind container has to be launched either 
@@ -188,7 +185,7 @@ on the `docker:dind` container. Let's visualise this:
 So here Container A tells Container B (the `docker:dind` container) to launch a Ubuntu container, which runs
 (isolated from the host's Docker daemon) in the daemon launched by the `docker:dind` container.
 
-## Volumes
+### Volumes
 
 Something that was odd to me was how volumes are handled, but see for yourself:
 
@@ -353,7 +350,7 @@ def hello_world():
 Now if we send another request, it'll take longer than before, but after some time we'll see "Hello world!" again.
 Like said earlier, the extra time comes from downloading and launching the Ubuntu container. 
 
-#### Let's get cloning
+### Let's get cloning
 
 Okay, so we have a web container, and we are able to launch Docker containers from that web container. All that is left
 is find a way to launch git as a container, and we're good to go. Thankfully the good people of alpine linux have 
@@ -501,7 +498,7 @@ Here we first create a temporary directory, which will be removed after the requ
 we clone the repo, and then tar the whole folder into an archive which we then return. Sweet!
 
 
-# Closing thoughts
+## Closing thoughts
 
 I hope this article helped people that want to use dind but didn't know how to start properly. If you have
 any thoughts, comments or spot any errors please contact me at fabian.lange@srccast.de. Thanks for reading, 
