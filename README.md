@@ -275,7 +275,7 @@ services:
 
 This launches our minimal Dockerfile as a container named web, and the `docker:dind` image as a container named docker.
 
-Now let's run this and see what happens `docker compose up`
+Now let's run this and see what happens when we run `docker compose up`
 
 ```text
 [output skipped]
