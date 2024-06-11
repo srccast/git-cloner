@@ -16,7 +16,7 @@ Now let's launch another container from inside the container:
 
 ```bash
 / $ docker run -it ubuntu bash  # run from inside the container
-root@ec84497b833b:/# # now this shell is a container inside the container
+root@ec84497b833b:/# # now this shell runs in a container inside the container
 ```
 
 Okay, so we have a container running the Docker image, and from inside that container launched another container
@@ -503,3 +503,8 @@ we clone the repo, and then tar the whole folder into an archive which we then r
 I hope this article helped people that want to use dind but didn't know how to start properly. If you have
 any thoughts, comments or spot any errors please contact me at fabian.lange@srccast.de. Thanks for reading, 
 until the next time. 
+
+## Futher reading
+
+* https://hub.docker.com/_/docker
+* https://jpetazzo.github.io/2015/09/03/do-not-use-docker-in-docker-for-ci/
