@@ -510,7 +510,7 @@ I hope this article helped people that want to use dind but didn't know how to s
 any thoughts, comments or spot any errors please contact me at fabian.lange@srccast.de. Thanks for reading, 
 until the next time. 
 
-## Futher reading
+## Further reading
 
 * https://hub.docker.com/_/docker
 * https://jpetazzo.github.io/2015/09/03/do-not-use-docker-in-docker-for-ci/
