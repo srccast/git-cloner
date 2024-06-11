@@ -111,9 +111,10 @@ A couple of things to unpack here, first let's break down the launch command:
 Second, as we can see from the numerous warning messages, this approach is super unsecure as now pretty much anyone
 can connect to our new daemon. 
 
-> But wait, if it's so unsecure, why are you doing this?
-> > Since the Docket network is not exposed and I wanted to keep things simple I chose the insecure approach.
-> > If you want to use dind on a production system, you MUST use TLS.
+> *If that's so unsecure, why are you doing this?*
+> 
+> Since the Docket network is not exposed and I wanted to keep things simple I chose the insecure approach.
+> If you want to use dind on a production system, you MUST use TLS.
 
 Now let's launch another docker container and the run Ubuntu again.
 
@@ -131,18 +132,21 @@ Status: Downloaded newer image for ubuntu:latest
 Okay, first we launch the Docker container, again in our `dind-test` network, and then we launch a Ubuntu container 
 from inside that container.
 
-> Wait, why does the image need to pulled again?
-> > The host Docker daemon and the newly launched Docker daemon do not share their build and image cache, so the
-> > image needs to downloaded again.
+> *Wait, why does the image need to pulled again?*
 > 
-> Okay, but how does a container know which Docker daemon to connect to?
-> > Check [this great stackoverflow answer](https://stackoverflow.com/a/73573049) for a detailed answer.
-> > tldr: 
-> >
-> > * if the DOCKER_HOST env var exists, use whatever is specified there 
-> > * use unix:///run/docker.sock if it exists
-> > * use tcp://docker:2375 if no TLS configuration exists
-> > * use tcp://docker:2376 if a TLS configuration exists
+> The host Docker daemon and the newly launched Docker daemon do not share their build and image cache, so the
+> image needs to downloaded again.
+> 
+
+> *Okay, but how does a container know which Docker daemon to connect to?*
+> 
+> Check [this great stackoverflow answer](https://stackoverflow.com/a/73573049) for a detailed answer.
+> tldr: 
+>
+> * if the DOCKER_HOST env var exists, use whatever is specified there 
+> * use unix:///run/docker.sock if it exists
+> * use tcp://docker:2375 if no TLS configuration exists
+> * use tcp://docker:2376 if a TLS configuration exists
 
 Let's see what at this looks like from our host system:
 
