@@ -113,7 +113,7 @@ can connect to our new daemon.
 
 > *If that's so unsecure, why are you doing this?*
 > 
-> Since the Docket network is not exposed and I wanted to keep things simple I chose the insecure approach.
+> Since the Docker network is not exposed and I wanted to keep things simple I chose the insecure approach.
 > If you want to use dind on a production system, you MUST use TLS.
 
 Now let's launch another docker container and the run Ubuntu again.
@@ -483,7 +483,7 @@ REPO = "https://github.com/pallets/flask.git"
 def hello_world():
     client = docker.DockerClient.from_env()
 
-    with TemporaryDirectory(dir="/data", delete=False) as temp_dir:
+    with TemporaryDirectory(dir="/data") as temp_dir:
         client.containers.run(
             "alpine/git",
             f"clone {REPO} /data",
@@ -507,8 +507,9 @@ we clone the repo, and then tar the whole folder into an archive which we then r
 ## Closing thoughts
 
 I hope this article helped people that want to use dind but didn't know how to start properly. If you have
-any thoughts, comments or spot any errors please contact me at fabian.lange@srccast.de. Thanks for reading, 
-until the next time. 
+any thoughts, comments or spot any errors please contact me at fabian.lange@srccast.de.
+The whole code can be found at https://github.com/srccast/git-cloner.
+Thanks for reading, until the next time. 
 
 ## Further reading
 
