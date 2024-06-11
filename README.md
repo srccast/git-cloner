@@ -76,6 +76,7 @@ Docker daemons that run entirely separate from the host machine's Docker daemon.
 
 Dind stands for docker-in-docker, and allows to launch a completely separate Docker daemon inside a container. 
 The only drawback is that the dind container has to be launched either 
+
 * as a _privileged_ container, meaning that the container has full access to the host system
 * or using a different runtime like [sysbox](https://github.com/nestybox/sysbox), which provides stronger isolation
 than the default runtime and allows Docker containers to launch a Docker daemon without full system access
@@ -137,6 +138,7 @@ from inside that container.
 > Okay, but how does a container know which Docker daemon to connect to?
 > > Check [this great stackoverflow answer](https://stackoverflow.com/a/73573049) for a detailed answer.
 > > tldr: 
+> >
 > > * if the DOCKER_HOST env var exists, use whatever is specified there 
 > > * use unix:///run/docker.sock if it exists
 > > * use tcp://docker:2375 if no TLS configuration exists
