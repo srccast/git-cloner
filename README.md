@@ -12,15 +12,41 @@ The easiest way is to volume mount the host's Docker socket into the container l
 % docker run -v /run/docker.sock:/run/docker.sock -it docker sh  # run from the host system
 ```
 
-Now let's launch another container from inside the container:
+Now let's launch another container from "inside" the container:
 
 ```bash
-/ $ docker run -it ubuntu bash  # run from inside the container
+/ $ docker run -it ubuntu bash
 root@ec84497b833b:/# # now this shell runs in a container inside the container
 ```
 
 Okay, so we have a container running the Docker image, and from inside that container launched another container
-running the Ubuntu image. Now let's check what that looks like on the host system.
+running the Ubuntu image. 
+
+My wrong assumption until now was that the Ubuntu container runs inside the Docker container, i.e.
+that the Ubuntu container would only be visible only to the Docker container, and would terminate once the Docker 
+container would be terminated, kind of like this:
+                                                    
+```text                                                 
++----------------------------------+
+|   HOST SYSTEM                    |
+|                                  |
+|   +---------------------------+  |
+|   |  CONTAINER A              |  |
+|   |  RUNS DOCKER              |  |
+|   |                           |  |
+|   |  +---------------------+  |  |
+|   |  |  CONTAINER B        |  |  |
+|   |  |  RUNS UBUNTU        |  |  |
+|   |  |                     |  |  |
+|   |  +---------------------+  |  |
+|   |                           |  |
+|   +---------------------------+  |
+|                                  |
++----------------------------------+             
+```                                                     
+
+
+Now let's check what that looks like on the host system.
 
 ```bash
 % docker ps
